@@ -1,0 +1,1104 @@
+<!doctype html>
+<html lang="es">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>MUN Evaluación de Delegados</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+	<main class="app">
+		<section class="card">
+			<h1>Evaluación MUN</h1>
+			<p>Flujo rápido para mesa: seleccionar comité, elegir delegación, sumar puntaje y revisar ranking.</p>
+			<div class="status" id="storage-status">Inicializando almacenamiento...</div>
+			<div class="session-warning">
+				<strong>Instrucciones de sesión:</strong>
+				<ul>
+					<li>Durante la sesión no cierres Chrome, no abras una nueva sesión de navegador y no reinicies la página.</li>
+					<li>Es probable que se pierdan datos si se interrumpe la sesión del navegador.</li>
+					<li>Al finalizar cada sesión, presiona <strong>Mandar a Google Sheets</strong> para asegurar respaldo.</li>
+				</ul>
+			</div>
+		</section>
+
+		<section class="card" id="start-screen">
+			<h2>1) Selecciona comité</h2>
+			<div class="row">
+				<label for="committee-select">Comité</label>
+				<select id="committee-select">
+					<option value="">-- Elegir comité --</option>
+				</select>
+				<button class="btn-primary" id="continue-btn">Continuar a evaluación</button>
+			</div>
+		</section>
+
+		<section class="card hidden" id="evaluation-screen">
+			<h2>2) Evaluación por delegación</h2>
+			<p id="current-committee-label"></p>
+			<div class="delegations" id="delegations-list"></div>
+
+			<div id="scoring-panel" class="hidden">
+				<div class="row">
+					<h2 id="selected-delegation-title">Delegación</h2>
+					<div class="stats" id="selected-stats"></div>
+				</div>
+
+				<div class="categories">
+					<div class="category">
+						<label>Participación (0, 0.5, 1)</label>
+						<div class="score-options" id="participacion-options"></div>
+					</div>
+					<div class="category">
+						<label>Call of attention (0, 1)</label>
+						<div class="score-options" id="call-attention-options"></div>
+					</div>
+					<div class="category">
+						<label>Warning (0, 1)</label>
+						<div class="score-options" id="warning-options"></div>
+					</div>
+				</div>
+
+				<div class="toolbar">
+					<button class="btn-primary" id="save-score-btn">Sumar evaluación</button>
+				</div>
+			</div>
+		</section>
+
+		<section class="card hidden" id="ranking-screen">
+			<h2 id="ranking-title">3) Registros del comité (editable)</h2>
+			<div class="toolbar">
+				<input id="locked-committee-display" type="text" readonly placeholder="Comité activo (solo lectura)">
+				<button id="committee-lock-info">Cambiar comité</button>
+				<button id="toggle-edit-btn">✏️ Habilitar edición</button>
+				<button class="btn-danger" id="reset-committee-btn">Borrar datos de comité</button>
+				<button class="btn-success" id="send-sheets-btn">Mandar a Google Sheets</button>
+			</div>
+			<div class="stats">Si editas o borras datos del comité, se notificará al HIGH COMMAND por correo. Antes de cerrar sesión, manda los datos a Google Sheets.</div>
+			<div class="table-wrap">
+			<table>
+				<thead>
+					<tr>
+						<th>#</th>
+						<th>Delegación</th>
+						<th>Comité</th>
+						<th>Participación</th>
+						<th>Total</th>
+						<th>Call</th>
+						<th>Warning</th>
+						<th>Evaluaciones</th>
+					</tr>
+				</thead>
+				<tbody id="ranking-body"></tbody>
+			</table>
+			</div>
+		</section>
+
+		<section class="card hidden" id="speakers-screen">
+			<h2>4) Speakers list</h2>
+			<p class="stats">Orden para lectura de position paper del comité activo.</p>
+			<div class="toolbar">
+				<select id="speakers-delegation-select">
+					<option value="">-- Delegación del comité activo --</option>
+				</select>
+				<button class="btn-primary" id="add-speaker-btn">Agregar a la lista</button>
+			</div>
+			<div class="table-wrap">
+			<table>
+				<thead>
+					<tr>
+						<th>#</th>
+						<th>Delegación</th>
+						<th>Min</th>
+						<th>Cronómetro</th>
+						<th>Acciones</th>
+					</tr>
+				</thead>
+				<tbody id="speakers-body"></tbody>
+			</table>
+			</div>
+		</section>
+	</main>
+
+	<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+	<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+	<script>
+		const TARGET_SPREADSHEET_ID = "10e0iM2qMcTlxXutGjJDYvBZTLmUMtSBbc7_3sWBFoA8";
+		const GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxTRy3n9bPKGuPkLjDHJTso1skYleVq0h5VCcmMxNyQLoA632EqTBxvegEN8A7Ub3gv/exec";
+		const HIGH_COMMAND_EMAIL = "victorbanco132@gmail.com";
+
+		const FIREBASE_CONFIG = {
+			apiKey: "",
+			authDomain: "",
+			projectId: "",
+			storageBucket: "",
+			messagingSenderId: "",
+			appId: ""
+		};
+
+		const STORAGE_KEY = "mun-evaluacion-v1";
+
+		const COMMITTEES = {
+			GA: [
+				"Egypt",
+				"French Republic",
+				"People's Republic of China",
+				"Republic of El Salvador",
+				"Republic of Guatemala",
+				"United Mexican States",
+				"United States of America",
+				"Federative Republic of Brazil",
+				"Russian Federation",
+				"Republic of Cuba"
+			],
+			SC: [
+				"French Republic",
+				"Islamic Republic of Iran",
+				"Islamic Republic of Pakistan",
+				"Kingdom of Saudi Arabia",
+				"Republic of South Africa",
+				"Republic of the Philippines",
+				"Arab Republic of Egypt",
+				"United Kingdom of Great Britain and Northern Ireland",
+				"United Mexican States",
+				"Republic of Indonesia"
+			],
+			ECOSOC: [
+				"Arab Republic of Egypt",
+				"Federal Republic of Germany",
+				"Federal Republic of Nigeria",
+				"Japan",
+				"Kingdom of Morocco",
+				"Kingdom of Spain",
+				"New Zealand",
+				"Republic of South Africa",
+				"Russian Federation",
+				"United Kingdom of Great Britain and Northern Ireland",
+				"French Republic",
+				"Italian Republic"
+			],
+			CIJ: [
+				"Reino de Arabia Saudita",
+				"Reino Unido de Gran Bretaña e Irlanda del Norte",
+				"República Bolivariana de Venezuela",
+				"República de Colombia",
+				"República de Filipinas",
+				"República de Turquia",
+				"República Democrática Federal de Etiopía",
+				"República Federativa de Brasil",
+				"Estados Unidos Mexicanos",
+				"República Libanesa"
+			],
+			UNESCO: [
+				"Commonwealth of Australia",
+				"Kingdom of Spain",
+				"New Zealand",
+				"People's Republic of China",
+				"Republic of Ecuador",
+				"Republic of Indonesia",
+				"Republic of South Africa",
+				"Republic of the Philippines",
+				"United Mexican States",
+				"Republic of Colombia",
+				"Haiti",
+				"Peru (Republic of Peru)"
+			]
+		};
+
+		const state = {
+			selectedCommittee: "",
+			selectedDelegation: "",
+			scores: {},
+			speakers: [],
+			speakerCounter: 0,
+			useFirebase: false,
+			db: null,
+			editUnlocked: false
+		};
+
+		const committeeSelect = document.getElementById("committee-select");
+		const continueBtn = document.getElementById("continue-btn");
+		const evaluationScreen = document.getElementById("evaluation-screen");
+		const currentCommitteeLabel = document.getElementById("current-committee-label");
+		const rankingScreen = document.getElementById("ranking-screen");
+		const speakersScreen = document.getElementById("speakers-screen");
+		const rankingTitle = document.getElementById("ranking-title");
+		const delegationsList = document.getElementById("delegations-list");
+		const scoringPanel = document.getElementById("scoring-panel");
+		const selectedDelegationTitle = document.getElementById("selected-delegation-title");
+		const selectedStats = document.getElementById("selected-stats");
+		const saveScoreBtn = document.getElementById("save-score-btn");
+		const rankingBody = document.getElementById("ranking-body");
+		const speakersBody = document.getElementById("speakers-body");
+		const storageStatus = document.getElementById("storage-status");
+		const lockedCommitteeDisplay = document.getElementById("locked-committee-display");
+		const committeeLockInfoBtn = document.getElementById("committee-lock-info");
+		const toggleEditBtn = document.getElementById("toggle-edit-btn");
+		const resetCommitteeBtn = document.getElementById("reset-committee-btn");
+		const sendSheetsBtn = document.getElementById("send-sheets-btn");
+		const speakersDelegationSelect = document.getElementById("speakers-delegation-select");
+		const addSpeakerBtn = document.getElementById("add-speaker-btn");
+
+		function bootstrap() {
+			fillCommitteeOptions();
+			createScoreOptions("participacion-options", "participacion", [0, 0.5, 1], 0.5);
+			createScoreOptions("call-attention-options", "callAttention", [0, 1], 0);
+			createScoreOptions("warning-options", "warning", [0, 1], 0);
+			bindEvents();
+			loadData();
+			window.addEventListener("beforeunload", onBeforeUnloadSession);
+		}
+
+		function fillCommitteeOptions() {
+			Object.keys(COMMITTEES).forEach((committee) => {
+				const option = document.createElement("option");
+				option.value = committee;
+				option.textContent = committee;
+				committeeSelect.appendChild(option);
+			});
+		}
+
+		function fillSpeakersDelegationOptions() {
+			speakersDelegationSelect.innerHTML = '<option value="">-- Delegación del comité activo --</option>';
+			if (!state.selectedCommittee) {
+				return;
+			}
+
+			(COMMITTEES[state.selectedCommittee] || []).forEach((delegation) => {
+				const option = document.createElement("option");
+				option.value = delegation;
+				option.textContent = delegation;
+				speakersDelegationSelect.appendChild(option);
+			});
+		}
+
+		function createScoreOptions(containerId, name, options, defaultValue) {
+			const container = document.getElementById(containerId);
+			for (const value of options) {
+				const id = `${name}-${value}`;
+				const input = document.createElement("input");
+				input.type = "radio";
+				input.name = name;
+				input.value = String(value);
+				input.id = id;
+				if (value === defaultValue) {
+					input.checked = true;
+				}
+
+				const label = document.createElement("label");
+				label.setAttribute("for", id);
+				label.textContent = String(value);
+
+				container.appendChild(input);
+				container.appendChild(label);
+			}
+		}
+
+		function bindEvents() {
+			continueBtn.addEventListener("click", onContinueToEvaluation);
+			saveScoreBtn.addEventListener("click", onSaveScore);
+			committeeLockInfoBtn.addEventListener("click", onLockedCommitteeAttempt);
+			toggleEditBtn.addEventListener("click", onToggleEditMode);
+			resetCommitteeBtn.addEventListener("click", onResetCommittee);
+			sendSheetsBtn.addEventListener("click", onSendToGoogleSheets);
+			addSpeakerBtn.addEventListener("click", onAddSpeaker);
+			speakersBody.addEventListener("click", onSpeakersActionClick);
+			speakersBody.addEventListener("change", onSpeakersDurationChange);
+		}
+
+		async function loadData() {
+			const localData = localStorage.getItem(STORAGE_KEY);
+			if (localData) {
+				try {
+					const parsed = JSON.parse(localData);
+					if (parsed && typeof parsed === "object" && (parsed.scores || parsed.speakers)) {
+						state.scores = parsed.scores || {};
+						state.speakers = Array.isArray(parsed.speakers) ? parsed.speakers.map(normalizeSpeakerFromStorage) : [];
+						state.speakerCounter = Number(parsed.speakerCounter || 0);
+					} else {
+						state.scores = parsed || {};
+						state.speakers = [];
+						state.speakerCounter = 0;
+					}
+				} catch {
+					state.scores = {};
+					state.speakers = [];
+					state.speakerCounter = 0;
+				}
+			}
+
+			const firebaseReady = isFirebaseConfigReady();
+			if (firebaseReady) {
+				try {
+					const app = firebase.initializeApp(FIREBASE_CONFIG);
+					state.db = app.firestore();
+					state.useFirebase = true;
+					await loadFromFirebase();
+					setStatus("Conectado a Firebase + copia local");
+				} catch {
+					state.useFirebase = false;
+					setStatus("Firebase no disponible, usando almacenamiento local");
+				}
+			} else {
+				setStatus("Modo local activo: datos guardados en este navegador.");
+			}
+
+			if (!state.speakerCounter) {
+				state.speakerCounter = state.speakers.reduce((maxId, speaker) => Math.max(maxId, Number(speaker.id || 0)), 0);
+			}
+
+			renderRanking();
+			renderSpeakers();
+		}
+
+		function isFirebaseConfigReady() {
+			return Boolean(
+				FIREBASE_CONFIG &&
+				FIREBASE_CONFIG.apiKey &&
+				FIREBASE_CONFIG.projectId &&
+				FIREBASE_CONFIG.appId
+			);
+		}
+
+		async function loadFromFirebase() {
+			const snap = await state.db.collection("mun_scores").get();
+			const remote = {};
+			snap.forEach((doc) => {
+				remote[doc.id] = doc.data();
+			});
+
+			const merged = { ...state.scores };
+			Object.keys(remote).forEach((key) => {
+				const localItem = merged[key];
+				const remoteItem = remote[key];
+				if (!localItem || (remoteItem.updatedAt || 0) > (localItem.updatedAt || 0)) {
+					merged[key] = remoteItem;
+				}
+			});
+
+			state.scores = merged;
+			saveLocal();
+		}
+
+		function saveLocal() {
+			const speakersForStorage = state.speakers.map((speaker) => ({
+				...speaker,
+				running: false,
+				intervalId: null
+			}));
+			localStorage.setItem(STORAGE_KEY, JSON.stringify({
+				scores: state.scores,
+				speakers: speakersForStorage,
+				speakerCounter: state.speakerCounter
+			}));
+		}
+
+		function onBeforeUnloadSession(event) {
+			saveLocal();
+			if (state.selectedCommittee) {
+				event.preventDefault();
+				event.returnValue = "";
+			}
+		}
+
+		function normalizeSpeakerFromStorage(raw) {
+			return {
+				id: Number(raw && raw.id ? raw.id : 0),
+				committee: String((raw && raw.committee) || ""),
+				delegation: String((raw && raw.delegation) || ""),
+				durationSec: Number((raw && raw.durationSec) || 120),
+				remainingSec: Number((raw && raw.remainingSec) || (raw && raw.durationSec) || 120),
+				running: false,
+				intervalId: null,
+				order: Number((raw && raw.order) || 1)
+			};
+		}
+
+		async function saveRemote(key, value) {
+			if (!state.useFirebase || !state.db) {
+				return;
+			}
+			try {
+				await state.db.collection("mun_scores").doc(key).set(value, { merge: true });
+			} catch {
+				setStatus("Error temporal al guardar en Firebase. Datos guardados localmente.");
+			}
+		}
+
+		async function deleteRemote(key) {
+			if (!state.useFirebase || !state.db) {
+				return;
+			}
+			try {
+				await state.db.collection("mun_scores").doc(key).delete();
+			} catch {
+				setStatus("Error temporal al eliminar en Firebase. Cambios aplicados localmente.");
+			}
+		}
+
+		function onContinueToEvaluation() {
+			const committee = committeeSelect.value;
+			if (!committee) {
+				alert("Selecciona un comité para continuar.");
+				return;
+			}
+
+			state.selectedCommittee = committee;
+			state.selectedDelegation = "";
+			state.editUnlocked = false;
+			rankingTitle.textContent = `3) Registros del comité ${committee} (editable)`;
+			rankingScreen.classList.remove("hidden");
+			speakersScreen.classList.remove("hidden");
+			lockedCommitteeDisplay.value = committee;
+			updateEditButtonState();
+			fillSpeakersDelegationOptions();
+
+			currentCommitteeLabel.textContent = `Comité activo: ${committee}`;
+			renderDelegations();
+			renderRanking();
+			renderSpeakers();
+
+			evaluationScreen.classList.remove("hidden");
+			scoringPanel.classList.add("hidden");
+		}
+
+		function onLockedCommitteeAttempt() {
+			alert("No se puede cambiar el comité en esta parte. Debes cambiarlo en la sección principal (paso 1).\n\nSi cambias comité arriba, esta sección se actualiza automáticamente.");
+		}
+
+		function updateEditButtonState() {
+			toggleEditBtn.textContent = state.editUnlocked ? "🔒 Bloquear edición" : "✏️ Habilitar edición";
+		}
+
+		function onToggleEditMode() {
+			if (!state.selectedCommittee) {
+				alert("Selecciona un comité primero.");
+				return;
+			}
+
+			if (!state.editUnlocked) {
+				const accepted = confirm(
+					"Para editar registros debes aceptar esta advertencia: cualquier modificación enviará notificación al HIGH COMMAND por correo. ¿Deseas continuar?"
+				);
+				if (!accepted) {
+					return;
+				}
+				state.editUnlocked = true;
+				setStatus(`Edición habilitada para ${state.selectedCommittee}. Se notificará al HIGH COMMAND.`);
+			} else {
+				state.editUnlocked = false;
+				setStatus("Edición bloqueada.");
+			}
+
+			updateEditButtonState();
+			renderRanking();
+		}
+
+		function renderDelegations() {
+			delegationsList.innerHTML = "";
+			const delegations = COMMITTEES[state.selectedCommittee] || [];
+
+			delegations.forEach((delegation) => {
+				const button = document.createElement("button");
+				button.className = "delegation-item";
+				button.textContent = delegation;
+				button.addEventListener("click", () => {
+					state.selectedDelegation = delegation;
+					renderDelegations();
+					renderSelectedDelegation();
+				});
+
+				if (state.selectedDelegation === delegation) {
+					button.classList.add("active");
+				}
+
+				delegationsList.appendChild(button);
+			});
+		}
+
+		function getScoreKey(committee, delegation) {
+			return `${committee}__${delegation}`;
+		}
+
+		function getSelectedValues() {
+			return {
+				participacion: Number(document.querySelector('input[name="participacion"]:checked').value),
+				callAttention: Number(document.querySelector('input[name="callAttention"]:checked').value),
+				warning: Number(document.querySelector('input[name="warning"]:checked').value)
+			};
+		}
+
+		function renderSelectedDelegation() {
+			if (!state.selectedDelegation) {
+				scoringPanel.classList.add("hidden");
+				return;
+			}
+
+			const key = getScoreKey(state.selectedCommittee, state.selectedDelegation);
+			const row = state.scores[key] || {
+				total: 0,
+				evaluaciones: 0,
+				participacion: 0,
+				callAttention: 0,
+				warning: 0
+			};
+
+			selectedDelegationTitle.textContent = `Delegación: ${state.selectedDelegation}`;
+			selectedStats.textContent = `Total: ${row.total} | Evaluaciones: ${row.evaluaciones} | Participación: ${row.participacion} | Call: ${row.callAttention} | Warning: ${row.warning}`;
+			scoringPanel.classList.remove("hidden");
+		}
+
+		async function onSaveScore() {
+			if (!state.selectedCommittee || !state.selectedDelegation) {
+				alert("Selecciona una delegación antes de guardar.");
+				return;
+			}
+
+			const selected = getSelectedValues();
+			const key = getScoreKey(state.selectedCommittee, state.selectedDelegation);
+			const previous = state.scores[key] || {
+				committee: state.selectedCommittee,
+				delegation: state.selectedDelegation,
+				participacion: 0,
+				callAttention: 0,
+				warning: 0,
+				total: 0,
+				evaluaciones: 0,
+				updatedAt: 0
+			};
+
+			const updated = {
+				...previous,
+				committee: state.selectedCommittee,
+				delegation: state.selectedDelegation,
+				participacion: previous.participacion + selected.participacion,
+				callAttention: previous.callAttention + selected.callAttention,
+				warning: previous.warning + selected.warning,
+				total: previous.total + selected.participacion,
+				evaluaciones: previous.evaluaciones + 1,
+				updatedAt: Date.now()
+			};
+
+			state.scores[key] = updated;
+			saveLocal();
+			await saveRemote(key, updated);
+
+			renderSelectedDelegation();
+			renderRanking();
+		}
+
+		async function onResetCommittee() {
+			const committee = state.selectedCommittee;
+			if (!committee) {
+				alert("No hay comité activo. Selecciona comité en la sección principal (paso 1).");
+				return;
+			}
+
+			const firstConfirm = confirm(
+				`⚠️ Acción sensible: vas a borrar datos del comité ${committee}. Si continúas, se notificará al HIGH COMMAND por correo. ¿Deseas continuar?`
+			);
+			if (!firstConfirm) {
+				return;
+			}
+
+			const secondConfirm = confirm(
+				`Confirmación final: ¿seguro que quieres borrar definitivamente los datos del comité ${committee}?`
+			);
+			if (!secondConfirm) {
+				return;
+			}
+
+			const keysToDelete = Object.keys(state.scores).filter((key) => {
+				const item = state.scores[key];
+				return item && item.committee === committee;
+			});
+
+			keysToDelete.forEach((key) => {
+				delete state.scores[key];
+			});
+
+			const speakerIdsToRemove = state.speakers
+				.filter((speaker) => speaker.committee === committee)
+				.map((speaker) => speaker.id);
+			speakerIdsToRemove.forEach((id) => {
+				removeSpeakerById(id);
+			});
+
+			saveLocal();
+			await Promise.all(keysToDelete.map((key) => deleteRemote(key)));
+			await notifyHighCommand("BORRADO_COMITE", {
+				committee,
+				deletedRecords: keysToDelete.length,
+				deletedSpeakers: speakerIdsToRemove.length
+			});
+
+			if (state.selectedCommittee === committee) {
+				renderSelectedDelegation();
+			}
+			renderRanking();
+			setStatus(`Comité ${committee} borrado correctamente.`);
+		}
+
+		async function notifyHighCommand(action, details) {
+			if (!GOOGLE_SHEETS_WEBHOOK_URL.trim() || !HIGH_COMMAND_EMAIL.trim()) {
+				return;
+			}
+
+			const payload = {
+				mode: "notify",
+				action,
+				highCommandEmail: HIGH_COMMAND_EMAIL,
+				committee: state.selectedCommittee || (details && details.committee) || "",
+				details,
+				timestamp: new Date().toISOString()
+			};
+
+			try {
+				await fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
+					method: "POST",
+					mode: "no-cors",
+					headers: { "Content-Type": "text/plain;charset=utf-8" },
+					body: JSON.stringify(payload)
+				});
+			} catch {
+				postToSheetsViaHiddenForm(payload);
+			}
+		}
+
+		function buildSelectedCommitteeRowsForSheets() {
+			if (!state.selectedCommittee) {
+				return [];
+			}
+
+			return (COMMITTEES[state.selectedCommittee] || []).map((delegation, index) => {
+				const key = getScoreKey(state.selectedCommittee, delegation);
+				const row = state.scores[key] || {
+					participacion: 0,
+					total: 0,
+					callAttention: 0,
+					warning: 0,
+					evaluaciones: 0
+				};
+
+				return {
+					committee: state.selectedCommittee,
+					rowOrder: index + 1,
+					delegation,
+					participacion: Number(row.participacion || 0),
+					total: Number(row.total || 0),
+					calls: Number(row.callAttention || 0),
+					warnings: Number(row.warning || 0),
+					participaciones: Number(row.evaluaciones || 0),
+					callAttention: Number(row.callAttention || 0),
+					warning: Number(row.warning || 0),
+					evaluaciones: Number(row.evaluaciones || 0)
+				};
+			});
+		}
+
+		async function onSendToGoogleSheets() {
+			if (!state.selectedCommittee) {
+				alert("Selecciona un comité antes de mandar a Google Sheets.");
+				return;
+			}
+
+			if (!GOOGLE_SHEETS_WEBHOOK_URL.trim()) {
+				alert("Falta configurar GOOGLE_SHEETS_WEBHOOK_URL en index.html");
+				return;
+			}
+
+			const rows = buildSelectedCommitteeRowsForSheets();
+			sendSheetsBtn.disabled = true;
+			sendSheetsBtn.textContent = "Mandando...";
+
+			try {
+				const payload = {
+					spreadsheetId: TARGET_SPREADSHEET_ID,
+					committee: state.selectedCommittee,
+					rows
+				};
+
+				try {
+					await fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
+						method: "POST",
+						mode: "no-cors",
+						headers: { "Content-Type": "text/plain;charset=utf-8" },
+						body: JSON.stringify(payload)
+					});
+
+					setStatus(`Solicitud enviada (${rows.length} filas de ${state.selectedCommittee}). Verifica la pestaña ${state.selectedCommittee} en Google Sheets.`);
+					alert(`Solicitud enviada (${rows.length} filas). Revisa la pestaña ${state.selectedCommittee} en Google Sheets.`);
+				} catch (fetchError) {
+					postToSheetsViaHiddenForm(payload);
+					setStatus(`Envío alternativo aplicado para ${state.selectedCommittee}. Verifica la pestaña ${state.selectedCommittee} en Google Sheets.`);
+					alert(`Se aplicó envío alternativo por formulario oculto. Verifica la pestaña ${state.selectedCommittee} en Google Sheets.`);
+					console.error(fetchError);
+				}
+			} catch (error) {
+				setStatus(`No se pudo mandar a Google Sheets: ${String(error)}`);
+				alert("No se pudo mandar a Google Sheets. Abre consola (F12) para detalle.");
+			} finally {
+				sendSheetsBtn.disabled = false;
+				sendSheetsBtn.textContent = "Mandar a Google Sheets";
+			}
+		}
+
+		function postToSheetsViaHiddenForm(payload) {
+			let frame = document.getElementById("sheets-post-frame");
+			if (!frame) {
+				frame = document.createElement("iframe");
+				frame.id = "sheets-post-frame";
+				frame.name = "sheets-post-frame";
+				frame.style.display = "none";
+				document.body.appendChild(frame);
+			}
+
+			const form = document.createElement("form");
+			form.method = "POST";
+			form.action = GOOGLE_SHEETS_WEBHOOK_URL;
+			form.target = "sheets-post-frame";
+			form.style.display = "none";
+
+			const input = document.createElement("input");
+			input.type = "hidden";
+			input.name = "payload";
+			input.value = JSON.stringify(payload);
+
+			form.appendChild(input);
+			document.body.appendChild(form);
+			form.submit();
+
+			setTimeout(() => {
+				form.remove();
+			}, 800);
+		}
+
+		function getCurrentCommitteeSpeakers() {
+			if (!state.selectedCommittee) {
+				return [];
+			}
+
+			return state.speakers
+				.filter((speaker) => speaker.committee === state.selectedCommittee)
+				.sort((a, b) => a.order - b.order);
+		}
+
+		function normalizeSpeakerOrders(committee) {
+			const committeeSpeakers = state.speakers
+				.filter((speaker) => speaker.committee === committee)
+				.sort((a, b) => a.order - b.order);
+
+			committeeSpeakers.forEach((speaker, index) => {
+				speaker.order = index + 1;
+			});
+		}
+
+		function onAddSpeaker() {
+			if (!state.selectedCommittee) {
+				alert("Selecciona un comité para usar la Speakers list.");
+				return;
+			}
+
+			const selectedName = speakersDelegationSelect.value;
+			const delegation = selectedName;
+
+			if (!delegation) {
+				alert("Selecciona una delegación del comité activo para agregar.");
+				return;
+			}
+
+			const order = getCurrentCommitteeSpeakers().length + 1;
+			state.speakerCounter += 1;
+			state.speakers.push({
+				id: state.speakerCounter,
+				committee: state.selectedCommittee,
+				delegation,
+				durationSec: 120,
+				remainingSec: 120,
+				running: false,
+				intervalId: null,
+				order
+			});
+
+			speakersDelegationSelect.value = "";
+			saveLocal();
+			renderSpeakers();
+		}
+
+		function formatTimer(seconds) {
+			const safe = Math.max(0, Number(seconds) || 0);
+			const min = Math.floor(safe / 60);
+			const sec = safe % 60;
+			return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+		}
+
+		function renderSpeakers() {
+			const speakers = getCurrentCommitteeSpeakers();
+			speakersBody.innerHTML = "";
+
+			if (!state.selectedCommittee) {
+				const empty = document.createElement("tr");
+				empty.innerHTML = '<td colspan="5">Selecciona un comité para usar la Speakers list.</td>';
+				speakersBody.appendChild(empty);
+				return;
+			}
+
+			if (speakers.length === 0) {
+				const empty = document.createElement("tr");
+				empty.innerHTML = '<td colspan="5">No hay delegaciones en la Speakers list.</td>';
+				speakersBody.appendChild(empty);
+				return;
+			}
+
+			speakers.forEach((speaker, index) => {
+				const tr = document.createElement("tr");
+				const durationMin = Math.max(0.5, (Number(speaker.durationSec) || 120) / 60);
+				tr.innerHTML = `
+					<td>${index + 1}</td>
+					<td>${speaker.delegation}</td>
+					<td><input class="table-input speaker-duration" type="number" min="0.5" step="0.5" data-id="${speaker.id}" value="${durationMin}"></td>
+					<td><span class="timer-pill">${formatTimer(speaker.remainingSec)}</span></td>
+					<td class="speaker-actions">
+						<button class="mini-btn" data-action="toggle" data-id="${speaker.id}">${speaker.running ? "Pausar" : "Iniciar"}</button>
+						<button class="mini-btn" data-action="reset" data-id="${speaker.id}">Reset</button>
+						<button class="mini-btn" data-action="up" data-id="${speaker.id}">↑</button>
+						<button class="mini-btn" data-action="down" data-id="${speaker.id}">↓</button>
+						<button class="mini-btn danger-lite" data-action="remove" data-id="${speaker.id}">Quitar</button>
+					</td>
+				`;
+				speakersBody.appendChild(tr);
+			});
+		}
+
+		function getSpeakerById(id) {
+			return state.speakers.find((speaker) => speaker.id === Number(id));
+		}
+
+		function startSpeakerTimer(speaker) {
+			if (!speaker || speaker.running) {
+				return;
+			}
+
+			if (speaker.remainingSec <= 0) {
+				speaker.remainingSec = speaker.durationSec;
+			}
+
+			speaker.running = true;
+			speaker.intervalId = setInterval(() => {
+				speaker.remainingSec = Math.max(0, speaker.remainingSec - 1);
+				if (speaker.remainingSec === 0) {
+					stopSpeakerTimer(speaker);
+				}
+				renderSpeakers();
+			}, 1000);
+		}
+
+		function stopSpeakerTimer(speaker) {
+			if (!speaker) {
+				return;
+			}
+			if (speaker.intervalId) {
+				clearInterval(speaker.intervalId);
+			}
+			speaker.intervalId = null;
+			speaker.running = false;
+		}
+
+		function removeSpeakerById(id) {
+			const speaker = getSpeakerById(id);
+			if (!speaker) {
+				return;
+			}
+
+			stopSpeakerTimer(speaker);
+			state.speakers = state.speakers.filter((item) => item.id !== Number(id));
+			normalizeSpeakerOrders(speaker.committee);
+		}
+
+		function moveSpeaker(id, direction) {
+			const speaker = getSpeakerById(id);
+			if (!speaker) {
+				return;
+			}
+
+			const committeeSpeakers = getCurrentCommitteeSpeakers();
+			const index = committeeSpeakers.findIndex((item) => item.id === speaker.id);
+			const targetIndex = direction === "up" ? index - 1 : index + 1;
+			if (index < 0 || targetIndex < 0 || targetIndex >= committeeSpeakers.length) {
+				return;
+			}
+
+			const targetSpeaker = committeeSpeakers[targetIndex];
+			const currentOrder = speaker.order;
+			speaker.order = targetSpeaker.order;
+			targetSpeaker.order = currentOrder;
+			normalizeSpeakerOrders(state.selectedCommittee);
+		}
+
+		function onSpeakersActionClick(event) {
+			const button = event.target.closest("button[data-action]");
+			if (!button) {
+				return;
+			}
+
+			const action = button.dataset.action;
+			const id = Number(button.dataset.id);
+			const speaker = getSpeakerById(id);
+			if (!speaker) {
+				return;
+			}
+
+			if (action === "toggle") {
+				if (speaker.running) {
+					stopSpeakerTimer(speaker);
+				} else {
+					startSpeakerTimer(speaker);
+				}
+			} else if (action === "reset") {
+				stopSpeakerTimer(speaker);
+				speaker.remainingSec = speaker.durationSec;
+			} else if (action === "up" || action === "down") {
+				moveSpeaker(id, action);
+			} else if (action === "remove") {
+				removeSpeakerById(id);
+			}
+
+			saveLocal();
+			renderSpeakers();
+		}
+
+		function onSpeakersDurationChange(event) {
+			const input = event.target;
+			if (!input.classList.contains("speaker-duration")) {
+				return;
+			}
+
+			const id = Number(input.dataset.id);
+			const speaker = getSpeakerById(id);
+			if (!speaker) {
+				return;
+			}
+
+			let minutes = Number(input.value);
+			if (!Number.isFinite(minutes) || minutes < 0.5) {
+				minutes = 2;
+			}
+
+			const newDuration = Math.round(minutes * 60);
+			speaker.durationSec = newDuration;
+			if (!speaker.running) {
+				speaker.remainingSec = newDuration;
+			}
+
+			saveLocal();
+			renderSpeakers();
+		}
+
+		function toRankingArray() {
+			if (!state.selectedCommittee) {
+				return [];
+			}
+
+			return Object.values(state.scores)
+				.filter((item) => item && item.delegation)
+				.filter((item) => item.committee === state.selectedCommittee)
+				.sort((a, b) => {
+					if (b.total !== a.total) {
+						return b.total - a.total;
+					}
+					if (a.warning !== b.warning) {
+						return a.warning - b.warning;
+					}
+					if (a.callAttention !== b.callAttention) {
+						return a.callAttention - b.callAttention;
+					}
+					return b.evaluaciones - a.evaluaciones;
+				});
+		}
+
+		function renderRanking() {
+			const data = toRankingArray();
+			rankingBody.innerHTML = "";
+
+			if (data.length === 0) {
+				const empty = document.createElement("tr");
+				empty.innerHTML = '<td colspan="8">Sin registros todavía.</td>';
+				rankingBody.appendChild(empty);
+				return;
+			}
+
+			data.forEach((item, idx) => {
+				const tr = document.createElement("tr");
+				const key = getScoreKey(item.committee, item.delegation);
+				const disabledAttr = state.editUnlocked ? "" : "disabled";
+				tr.innerHTML = `
+					<td>${idx + 1}</td>
+					<td>${item.delegation}</td>
+					<td>${item.committee}</td>
+					<td><input class="table-input ranking-edit" type="number" min="0" step="0.5" data-key="${key}" data-field="participacion" value="${item.participacion ?? 0}" ${disabledAttr}></td>
+					<td><input class="table-input ranking-edit" type="number" min="0" step="0.5" data-key="${key}" data-field="total" value="${item.total ?? 0}" ${disabledAttr}></td>
+					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="callAttention" value="${item.callAttention ?? 0}" ${disabledAttr}></td>
+					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="warning" value="${item.warning ?? 0}" ${disabledAttr}></td>
+					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="evaluaciones" value="${item.evaluaciones ?? 0}" ${disabledAttr}></td>
+				`;
+				rankingBody.appendChild(tr);
+			});
+
+			rankingBody.querySelectorAll(".ranking-edit").forEach((input) => {
+				input.addEventListener("change", onRankingFieldChange);
+			});
+		}
+
+		async function onRankingFieldChange(event) {
+			if (!state.editUnlocked) {
+				alert("Debes habilitar edición con el botón ✏️ y aceptar la advertencia.");
+				renderRanking();
+				return;
+			}
+
+			const input = event.target;
+			const key = input.dataset.key;
+			const field = input.dataset.field;
+			const row = state.scores[key];
+
+			if (!row || !field) {
+				return;
+			}
+
+			let value = Number(input.value);
+			if (!Number.isFinite(value) || value < 0) {
+				value = 0;
+			}
+
+			if (field === "callAttention" || field === "warning" || field === "evaluaciones") {
+				value = Math.round(value);
+			}
+
+			const previousValue = Number(row[field] || 0);
+			row[field] = value;
+			row.updatedAt = Date.now();
+			saveLocal();
+			await saveRemote(key, row);
+			await notifyHighCommand("EDICION_REGISTRO", {
+				committee: row.committee,
+				delegation: row.delegation,
+				field,
+				previousValue,
+				newValue: value
+			});
+
+			if (state.selectedCommittee === row.committee && state.selectedDelegation === row.delegation) {
+				renderSelectedDelegation();
+			}
+			renderRanking();
+			setStatus("Registro actualizado.");
+		}
+
+		function setStatus(message) {
+			storageStatus.textContent = `Almacenamiento: ${message}`;
+		}
+
+		bootstrap();
+	</script>
+</body>
+</html>
