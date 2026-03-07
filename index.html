@@ -46,7 +46,7 @@
 
 				<div class="categories">
 					<div class="category">
-						<label>Participación (0, 0.5, 1)</label>
+						<label>Participación (1, 2, 3)</label>
 						<div class="score-options" id="participacion-options"></div>
 					</div>
 					<div class="category">
@@ -241,7 +241,7 @@
 
 		function bootstrap() {
 			fillCommitteeOptions();
-			createScoreOptions("participacion-options", "participacion", [0, 0.5, 1], 0.5);
+			createScoreOptions("participacion-options", "participacion", [1, 2, 3], 2);
 			createScoreOptions("call-attention-options", "callAttention", [0, 1], 0);
 			createScoreOptions("warning-options", "warning", [0, 1], 0);
 			bindEvents();
@@ -1035,8 +1035,8 @@
 					<td>${idx + 1}</td>
 					<td>${item.delegation}</td>
 					<td>${item.committee}</td>
-					<td><input class="table-input ranking-edit" type="number" min="0" step="0.5" data-key="${key}" data-field="participacion" value="${item.participacion ?? 0}" ${disabledAttr}></td>
-					<td><input class="table-input ranking-edit" type="number" min="0" step="0.5" data-key="${key}" data-field="total" value="${item.total ?? 0}" ${disabledAttr}></td>
+					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="participacion" value="${item.participacion ?? 0}" ${disabledAttr}></td>
+					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="total" value="${item.total ?? 0}" ${disabledAttr}></td>
 					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="callAttention" value="${item.callAttention ?? 0}" ${disabledAttr}></td>
 					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="warning" value="${item.warning ?? 0}" ${disabledAttr}></td>
 					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="evaluaciones" value="${item.evaluaciones ?? 0}" ${disabledAttr}></td>
