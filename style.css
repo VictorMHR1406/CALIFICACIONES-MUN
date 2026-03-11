@@ -39,6 +39,26 @@ body {
 	padding: 14px;
 }
 
+#start-screen {
+	order: 1;
+}
+
+#attendance-screen {
+	order: 2;
+}
+
+#speakers-screen {
+	order: 3;
+}
+
+#evaluation-screen {
+	order: 4;
+}
+
+#ranking-screen {
+	order: 5;
+}
+
 .session-warning {
 	margin-top: 10px;
 	border: 1px solid #fcd34d;
@@ -64,6 +84,30 @@ h1 {
 h2 {
 	font-size: 1rem;
 	margin-bottom: 10px;
+}
+
+.step-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.step-header h2 {
+	margin-bottom: 0;
+}
+
+.step-toggle-btn {
+	min-height: 32px;
+	min-width: 40px;
+	padding: 4px 10px;
+	font-size: 1.1rem;
+	line-height: 1;
+	font-weight: 700;
+}
+
+.step-content {
+	margin-top: 10px;
 }
 
 p {
