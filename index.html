@@ -34,7 +34,7 @@
 		</section>
 
 		<section class="card hidden" id="evaluation-screen">
-			<h2>2) Evaluación por delegación</h2>
+			<h2>4) Evaluación por delegación</h2>
 			<p id="current-committee-label"></p>
 			<div class="delegations" id="delegations-list"></div>
 
@@ -46,7 +46,7 @@
 
 				<div class="categories">
 					<div class="category">
-						<label>Participación (1, 2, 3)</label>
+						<label>Participación (0, 0.5, 1)</label>
 						<div class="score-options" id="participacion-options"></div>
 					</div>
 					<div class="category">
@@ -66,7 +66,7 @@
 		</section>
 
 		<section class="card hidden" id="ranking-screen">
-			<h2 id="ranking-title">3) Registros del comité (editable)</h2>
+			<h2 id="ranking-title">Registros del comité (editable)</h2>
 			<div class="toolbar">
 				<input id="locked-committee-display" type="text" readonly placeholder="Comité activo (solo lectura)">
 				<button id="committee-lock-info">Cambiar comité</button>
@@ -94,8 +94,19 @@
 			</div>
 		</section>
 
+		<section class="card hidden" id="attendance-screen">
+			<h2>2) Pasar lista</h2>
+			<p class="stats">Marca la asistencia de cada delegación del comité activo. la X es austente y la palomita es Presente</p>
+			<div class="toolbar">
+				<button class="btn-primary" id="mark-all-present-btn">Marcar todos presentes</button>
+				<button class="btn-danger" id="mark-all-absent-btn">Marcar todos ausentes</button>
+				<button class="btn-success" id="send-attendance-btn">Enviar asistencia a Google Sheets</button>
+			</div>
+			<div class="delegations" id="attendance-list"></div>
+		</section>
+
 		<section class="card hidden" id="speakers-screen">
-			<h2>4) Speakers list</h2>
+			<h2>3) Speakers list</h2>
 			<p class="stats">Orden para lectura de position paper del comité activo.</p>
 			<div class="toolbar">
 				<select id="speakers-delegation-select">
@@ -148,19 +159,33 @@
 				"United Mexican States",
 				"United States of America",
 				"Federative Republic of Brazil",
+				"Japan",
+				"Republic of the Philippines",
+				"United Kingdom of Great Britain and Northern Ireland",
 				"Russian Federation",
-				"Republic of Cuba"
+				"Republic of Nicaragua",
+				"Republic of Cuba",
+				"Republic of the Sudan",
+				"Bolivarian Republic of Venezuela",
+				"Republic of India"
 			],
 			SC: [
 				"French Republic",
 				"Islamic Republic of Iran",
 				"Islamic Republic of Pakistan",
 				"Kingdom of Saudi Arabia",
+				"People's Republic of China",
 				"Republic of South Africa",
 				"Republic of the Philippines",
 				"Arab Republic of Egypt",
 				"United Kingdom of Great Britain and Northern Ireland",
+				"Republic of India",
+				"United States of America",
+				"Republic of Türkiye",
+				"Republic of Singapore",
+				"Russian Federation",
 				"United Mexican States",
+				"Lao People's Democratic Republic",
 				"Republic of Indonesia"
 			],
 			ECOSOC: [
@@ -173,9 +198,14 @@
 				"New Zealand",
 				"Republic of South Africa",
 				"Russian Federation",
+				"Democratic Republic of the Congo",
+				"People's Republic of China",
+				"Republic of the Sudan",
 				"United Kingdom of Great Britain and Northern Ireland",
+				"United States of America",
 				"French Republic",
-				"Italian Republic"
+				"Italian Republic",
+				"Republic of Kenya"
 			],
 			CIJ: [
 				"Reino de Arabia Saudita",
@@ -183,11 +213,18 @@
 				"República Bolivariana de Venezuela",
 				"República de Colombia",
 				"República de Filipinas",
-				"República de Turquia",
+				"República de Turquía",
 				"República Democrática Federal de Etiopía",
 				"República Federativa de Brasil",
 				"Estados Unidos Mexicanos",
-				"República Libanesa"
+				"República Libanesa",
+				"República Francesa",
+				"People's Republic of China",
+				"Russian Federation",
+				"United States of America",
+				"República Árabe Siria",
+				"República de Irak",
+				"República Islámica de Afganistán"
 			],
 			UNESCO: [
 				"Commonwealth of Australia",
@@ -200,8 +237,13 @@
 				"Republic of the Philippines",
 				"United Mexican States",
 				"Republic of Colombia",
+				"United States of America",
+				"Russian Federation",
 				"Haiti",
-				"Peru (Republic of Peru)"
+				"Republic of Peru",
+				"French Republic",
+				"Democratic Republic of the Congo",
+				"United Kingdom of Great Britain and Northern Ireland"
 			]
 		};
 
@@ -209,6 +251,7 @@
 			selectedCommittee: "",
 			selectedDelegation: "",
 			scores: {},
+			attendance: {},
 			speakers: [],
 			speakerCounter: 0,
 			useFirebase: false,
@@ -236,14 +279,21 @@
 		const toggleEditBtn = document.getElementById("toggle-edit-btn");
 		const resetCommitteeBtn = document.getElementById("reset-committee-btn");
 		const sendSheetsBtn = document.getElementById("send-sheets-btn");
+		const attendanceScreen = document.getElementById("attendance-screen");
+		const attendanceList = document.getElementById("attendance-list");
+		const markAllPresentBtn = document.getElementById("mark-all-present-btn");
+		const markAllAbsentBtn = document.getElementById("mark-all-absent-btn");
+		const sendAttendanceBtn = document.getElementById("send-attendance-btn");
 		const speakersDelegationSelect = document.getElementById("speakers-delegation-select");
 		const addSpeakerBtn = document.getElementById("add-speaker-btn");
+		const STEP_SECTION_IDS = ["attendance-screen", "speakers-screen", "evaluation-screen"];
 
 		function bootstrap() {
 			fillCommitteeOptions();
-			createScoreOptions("participacion-options", "participacion", [1, 2, 3], 2);
+			createScoreOptions("participacion-options", "participacion", [0, 0.5, 1], 0);
 			createScoreOptions("call-attention-options", "callAttention", [0, 1], 0);
 			createScoreOptions("warning-options", "warning", [0, 1], 0);
+			setupStepToggles();
 			bindEvents();
 			loadData();
 			window.addEventListener("beforeunload", onBeforeUnloadSession);
@@ -301,9 +351,76 @@
 			toggleEditBtn.addEventListener("click", onToggleEditMode);
 			resetCommitteeBtn.addEventListener("click", onResetCommittee);
 			sendSheetsBtn.addEventListener("click", onSendToGoogleSheets);
+			markAllPresentBtn.addEventListener("click", () => onMarkAll(true));
+			markAllAbsentBtn.addEventListener("click", () => onMarkAll(false));
+			sendAttendanceBtn.addEventListener("click", onSendAttendanceToSheets);
 			addSpeakerBtn.addEventListener("click", onAddSpeaker);
 			speakersBody.addEventListener("click", onSpeakersActionClick);
 			speakersBody.addEventListener("change", onSpeakersDurationChange);
+		}
+
+		function setupStepToggles() {
+			STEP_SECTION_IDS.forEach((sectionId) => {
+				const section = document.getElementById(sectionId);
+				if (!section || section.querySelector(".step-header")) {
+					return;
+				}
+
+				const title = section.querySelector("h2");
+				if (!title) {
+					return;
+				}
+
+				const header = document.createElement("div");
+				header.className = "step-header";
+
+				const toggleBtn = document.createElement("button");
+				toggleBtn.type = "button";
+				toggleBtn.className = "step-toggle-btn";
+				toggleBtn.textContent = "−";
+				toggleBtn.setAttribute("aria-label", "Minimizar paso");
+				toggleBtn.setAttribute("aria-expanded", "true");
+
+				section.insertBefore(header, title);
+				header.appendChild(title);
+				header.appendChild(toggleBtn);
+
+				const content = document.createElement("div");
+				content.className = "step-content";
+				while (header.nextSibling) {
+					content.appendChild(header.nextSibling);
+				}
+				section.appendChild(content);
+
+				toggleBtn.addEventListener("click", () => {
+					const collapsed = section.classList.contains("collapsed");
+					setStepCollapsed(section, !collapsed);
+				});
+			});
+		}
+
+		function setStepCollapsed(section, collapsed) {
+			const content = section.querySelector(".step-content");
+			const toggleBtn = section.querySelector(".step-toggle-btn");
+			if (!content || !toggleBtn) {
+				return;
+			}
+
+			content.classList.toggle("hidden", collapsed);
+			section.classList.toggle("collapsed", collapsed);
+			toggleBtn.textContent = collapsed ? "+" : "−";
+			toggleBtn.setAttribute("aria-expanded", String(!collapsed));
+			toggleBtn.setAttribute("aria-label", collapsed ? "Expandir paso" : "Minimizar paso");
+		}
+
+		function collapseAllStepsExcept(openSectionId) {
+			STEP_SECTION_IDS.forEach((sectionId) => {
+				const section = document.getElementById(sectionId);
+				if (!section) {
+					return;
+				}
+				setStepCollapsed(section, sectionId !== openSectionId);
+			});
 		}
 
 		async function loadData() {
@@ -388,6 +505,7 @@
 			}));
 			localStorage.setItem(STORAGE_KEY, JSON.stringify({
 				scores: state.scores,
+				attendance: state.attendance,
 				speakers: speakersForStorage,
 				speakerCounter: state.speakerCounter
 			}));
@@ -446,9 +564,10 @@
 			state.selectedCommittee = committee;
 			state.selectedDelegation = "";
 			state.editUnlocked = false;
-			rankingTitle.textContent = `3) Registros del comité ${committee} (editable)`;
+			rankingTitle.textContent = `Registros del comité ${committee} (editable)`;
 			rankingScreen.classList.remove("hidden");
 			speakersScreen.classList.remove("hidden");
+			attendanceScreen.classList.remove("hidden");
 			lockedCommitteeDisplay.value = committee;
 			updateEditButtonState();
 			fillSpeakersDelegationOptions();
@@ -457,9 +576,11 @@
 			renderDelegations();
 			renderRanking();
 			renderSpeakers();
+			renderAttendance();
 
 			evaluationScreen.classList.remove("hidden");
 			scoringPanel.classList.add("hidden");
+			collapseAllStepsExcept("attendance-screen");
 		}
 
 		function onLockedCommitteeAttempt() {
@@ -518,6 +639,99 @@
 
 		function getScoreKey(committee, delegation) {
 			return `${committee}__${delegation}`;
+		}
+
+		function getAttendanceKey(committee, delegation) {
+			return `${committee}__${delegation}`;
+		}
+
+		function renderAttendance() {
+			attendanceList.innerHTML = "";
+			if (!state.selectedCommittee) {
+				return;
+			}
+			const delegations = COMMITTEES[state.selectedCommittee] || [];
+			delegations.forEach((delegation) => {
+				const key = getAttendanceKey(state.selectedCommittee, delegation);
+				const present = state.attendance[key] === true;
+				const btn = document.createElement("button");
+				btn.className = "delegation-item attendance-btn" + (present ? " present" : " absent");
+				btn.innerHTML = `<span class="att-icon">${present ? "✅" : "❌"}</span> ${delegation}`;
+				btn.addEventListener("click", () => {
+					state.attendance[key] = !present;
+					saveLocal();
+					renderAttendance();
+				});
+				attendanceList.appendChild(btn);
+			});
+		}
+
+		function onMarkAll(presentValue) {
+			if (!state.selectedCommittee) {
+				return;
+			}
+			(COMMITTEES[state.selectedCommittee] || []).forEach((delegation) => {
+				const key = getAttendanceKey(state.selectedCommittee, delegation);
+				state.attendance[key] = presentValue;
+			});
+			saveLocal();
+			renderAttendance();
+		}
+
+		async function onSendAttendanceToSheets() {
+			if (!state.selectedCommittee) {
+				alert("Selecciona un comité antes de enviar la asistencia.");
+				return;
+			}
+			if (!GOOGLE_SHEETS_WEBHOOK_URL.trim()) {
+				alert("Falta configurar GOOGLE_SHEETS_WEBHOOK_URL en index.html");
+				return;
+			}
+
+			const sheetName = `A-${state.selectedCommittee}`;
+			const rows = (COMMITTEES[state.selectedCommittee] || []).map((delegation, index) => {
+				const key = getAttendanceKey(state.selectedCommittee, delegation);
+				return {
+					rowOrder: index + 1,
+					delegation,
+					present: state.attendance[key] === true ? "PRESENTE" : "AUSENTE"
+				};
+			});
+
+			sendAttendanceBtn.disabled = true;
+			sendAttendanceBtn.textContent = "Enviando...";
+
+			const payload = {
+				mode: "attendance",
+				spreadsheetId: TARGET_SPREADSHEET_ID,
+				committee: state.selectedCommittee,
+				sheetName,
+				timestamp: new Date().toISOString(),
+				rows
+			};
+
+			try {
+				try {
+					await fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
+						method: "POST",
+						mode: "no-cors",
+						headers: { "Content-Type": "text/plain;charset=utf-8" },
+						body: JSON.stringify(payload)
+					});
+					setStatus(`Asistencia enviada a hoja ${sheetName} (${rows.length} delegaciones).`);
+					alert(`Asistencia enviada. Revisa la hoja ${sheetName} en Google Sheets.`);
+				} catch (fetchError) {
+					postToSheetsViaHiddenForm(payload);
+					setStatus(`Asistencia enviada (alternativo) a hoja ${sheetName}.`);
+					alert(`Envío alternativo aplicado. Revisa la hoja ${sheetName} en Google Sheets.`);
+				}
+			} catch (error) {
+				setStatus(`No se pudo enviar la asistencia: ${String(error)}`);
+				alert("No se pudo enviar la asistencia. Abre consola (F12) para detalle.");
+			} finally {
+				sendAttendanceBtn.disabled = false;
+				sendAttendanceBtn.textContent = "Enviar asistencia a Google Sheets";
+			}
 		}
 
 		function getSelectedValues() {
@@ -1035,7 +1249,7 @@
 					<td>${idx + 1}</td>
 					<td>${item.delegation}</td>
 					<td>${item.committee}</td>
-					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="participacion" value="${item.participacion ?? 0}" ${disabledAttr}></td>
+					<td><input class="table-input ranking-edit" type="number" min="0" step="0.5" data-key="${key}" data-field="participacion" value="${item.participacion ?? 0}" ${disabledAttr}></td>
 					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="total" value="${item.total ?? 0}" ${disabledAttr}></td>
 					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="callAttention" value="${item.callAttention ?? 0}" ${disabledAttr}></td>
 					<td><input class="table-input ranking-edit" type="number" min="0" step="1" data-key="${key}" data-field="warning" value="${item.warning ?? 0}" ${disabledAttr}></td>
